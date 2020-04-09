@@ -7,15 +7,6 @@ import math
 import matplotlib.pyplot as plt
 from keras.layers import LSTM, Dense, RepeatVector, TimeDistributed
 from keras.model import Sequential, Model
-import numpy
-
-def preprocess_signals(signals):
-    """
-    Preprocesses signals by slicing long ones to default length and zero-padding the short ones
-    :param signals: numpy array of signals
-    :return: numpy array of preprocessed signals
-    """
-    pass
 
 def get_representations(signals):
     """
@@ -36,6 +27,41 @@ def get_representations(signals):
     lstm_model = Model(inputs=lstm_model.inputs, outputs=lstm_model.layers[0].output)
 
     representations = lstm_model.predict(signals)
+    return representations
+
+def pad_signal(signal, default_length):
+    """
+    Fills signal to default length by zero-padding
+    :return: signal of length default_length with zeros added at the end of existing signal
+    """
+    return np.pad(signal, (0, default_length - len(signal)), 'constant')
+
+def slice_and_pad(signal, default_length):
+    """
+    Slices long signals for training
+    :param default_length: length of return signals
+    :return: list of signals of default length
+    """
+    sliced_signals = []
+    for i in range(0, len(signal), default_length):
+        sliced_signals.append(signal[i:i+default_length])
+    sliced_signals[-1] = pad_signal(sliced_signals[-1], default_length)
+    return sliced_signals
+
+def preprocess_signals(signals, default_length):
+    """
+    Preprocesses signals by slicing long ones to default length and zero-padding the short ones
+    :param signals: numpy array of signals
+    :return: numpy array of preprocessed signals
+    """
+    conservative_signals = []
+    for file in signals:
+        for signal in file:
+            if len(signal) <= default_length:
+                conservative_signals.append(pad_signal(signal, default_length))
+            else:
+                conservative_signals.extend(slice_and_pad(signal, default_length))
+    return np.asarray(conservative_signals)
 
 def parse_file(entry):
     file = hp.File(entry, 'r')
@@ -88,6 +114,7 @@ if __name__ == "__main__":
     all_signals = parse(path)
     #plot_signals(all_signals)
     len_mean, len_std = len_statistics(all_signals)
+    print(preprocess_signals(all_signals, 50000))
     print("The average length of signals is {} with standard deviation of {}".format(len_mean, len_std))
 
 
