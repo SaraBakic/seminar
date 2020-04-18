@@ -5,26 +5,65 @@ import re
 import sys
 import math
 import matplotlib.pyplot as plt
-from keras.layers import LSTM, Dense, RepeatVector, TimeDistributed
-from keras.model import Sequential, Model
+from tensorflow.python.keras.models import Sequential, Model
+from tensorflow.python.keras.layers import LSTM, Dense, RepeatVector, TimeDistributed
+import tensorflow as tf
+import logging
+logging.getLogger('tensorflow').setLevel(logging.ERROR)
 
-def get_representations(signals):
-    """
-    Function builds and trains an autodecoder for representation learning
-    :param signals: numpy array of signals #TODO think about appropriate dimensions
-    :return: numpy array of representations #TODO same
-    """
+class LossAndErrorPrintingCallback(tf.keras.callbacks.Callback):
+
+    def on_train_batch_end(self, batch, logs=None):
+        print('For batch {}, loss is {:7.2f}.'.format(batch, logs['loss']))
+
+    def on_train_epoch_end(self, epoch, logs=None):
+        print('For epoch {} loss is {:7.2f}.'.format(epoch, logs['loss']))
+
+
+def artificial(data):
+    print("Data is of shape {}, {}".format(data.shape[0], data.shape[1]))
+    signals = np.reshape(data, (data.shape[0], data.shape[1], 1))
     lstm_model = Sequential()
-    lstm_model.add(LSTM(1000, activation='relu'))
-    lstm_model.add(RepeatVector(signals.shape[0]))
-    lstm_model.add(LSTM(1000, activation='relu', return_sequences=True))
+    lstm_model.add(LSTM(100, activation='relu', input_shape=(data.shape[1], 1)))
+    lstm_model.add(RepeatVector(data.shape[1]))
+    lstm_model.add(LSTM(100, activation='relu', return_sequences=True))
     lstm_model.add(TimeDistributed(Dense(1)))
 
     lstm_model.compile(optimizer='adam', loss='mse')
 
-    lstm_model.fit(signals, signals, epochs=50, verbose=0)
+    print("I'm about to train")
+    hist = lstm_model.fit(signals, signals, epochs=100, verbose=0,
+                          callbacks=[LossAndErrorPrintingCallback()])
 
-    lstm_model = Model(inputs=lstm_model.inputs, outputs=lstm_model.layers[0].output)
+
+    lstm_model = Model(inputs=lstm_model.inputs, outputs=lstm_model.layers[1].output)
+
+    representations = lstm_model.predict(signals)
+
+
+def get_representations(signals, default_length, latent_dim):
+    """
+    Function builds and trains an autodecoder for representation learning
+    :param signals: numpy array of signals of dimensions Nxdefault_length
+    :return: numpy array of representations #TODO
+    """
+    signals = np.reshape(signals, (signals.shape[0], default_length, 1))
+    print ("Trying to get signal representations for signals of shape ({}, {}, {})".format(signals.shape[0], signals.shape[1], signals.shape[2]))
+    lstm_model = Sequential()
+    lstm_model.add(LSTM(latent_dim, activation='relu', input_shape=(default_length, 1)))
+    lstm_model.add(RepeatVector(default_length))
+    lstm_model.add(LSTM(latent_dim, activation='relu', return_sequences=True))
+    lstm_model.add(TimeDistributed(Dense(1)))
+
+    lstm_model.compile(optimizer='adam', loss='mse')
+
+    print("I'm about to train")
+    hist = lstm_model.fit(signals, signals, batch_size=50, epochs=1, verbose=0, callbacks=[LossAndErrorPrintingCallback()])
+
+    print("Done training, this the history")
+    print(hist.history.keys())
+
+    lstm_model = Model(inputs=lstm_model.inputs, outputs=lstm_model.layers[1].output)
 
     representations = lstm_model.predict(signals)
     return representations
@@ -94,7 +133,7 @@ def len_statistics(signals):
     find_most_common_length(lens)
     mean = np.mean(lens)
     std = math.sqrt(np.mean((lens - mean)**2))
-    return mean, std
+    return len(lens), mean, std
 
 def plot_signals(signals):
     for file in signals:
@@ -106,15 +145,19 @@ def plot_signals(signals):
 def find_most_common_length(lengths):
     values, counts = np.unique(lengths, return_counts=True)
     for value, count in zip(values, counts):
-        if count > 1:
+        if count > len(lengths)/10:
             print("Length {} occurs {} times".format(value, count))
 
 if __name__ == "__main__":
     path = sys.argv[1]
+    default_len = 10000
+    latent_dim = 100
     all_signals = parse(path)
     #plot_signals(all_signals)
-    len_mean, len_std = len_statistics(all_signals)
-    print(preprocess_signals(all_signals, 50000))
-    print("The average length of signals is {} with standard deviation of {}".format(len_mean, len_std))
+    num_of_signals, len_mean, len_std = len_statistics(all_signals)
+    preprocessed_signals = preprocess_signals(all_signals, default_len)
+    print("The average length of {} signals is {} with standard deviation of {}".format(num_of_signals, len_mean, len_std))
+    get_representations(signals=preprocessed_signals, default_length=default_len, latent_dim=latent_dim)
+
 
 
